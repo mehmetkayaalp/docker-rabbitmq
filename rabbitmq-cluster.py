@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# coding=utf-8
 import logging
 import os
 import subprocess
@@ -12,7 +13,17 @@ APP_ID = os.getenv('MARATHON_APP_ID')
 MESOS_TASK_ID = os.getenv('MESOS_TASK_ID')
 MARATHON_URI = os.environ.get('MARATHON_URI', 'http://marathon.mesos:8080')
 HOST_IP = os.getenv('HOST', '127.0.0.1')
-HOST_NAME = os.getenv('HOSTNAME')  # docker container_id
+CONTAINER_ID = os.getenv('HOSTNAME')  # docker container_id
+RABBITMQ_ERLANG_COOKIE = os.getenv('RABBITMQ_ERLANG_COOKIE', None)
+DEFAULT_USER = os.getenv('RABBITMQ_DEFAULT_USER', 'guest')
+DEFAULT_PASS = os.getenv('RABBITMQ_DEFAULT_PASS', 'guest')
+DEFAULT_VHOST = os.getenv('RABBITMQ_DEFAULT_VHOST', '/')
+NET_TICKTIME = os.getenv('RABBITMQ_NET_TICKTIME', '60')
+CLUSTER_PARTITION_HANDLING = os.getenv('RABBITMQ_CLUSTER_PARTITION_HANDLING', 'ignore')
+MANAGEMENT_PORT = os.getenv('RABBITMQ_MANAGEMENT_PORT', '/')
+VM_MEM_HIGH_WATERMARK_ABSOLUTE = os.getenv('RABBITMQ_VM_MEM_HW_ABSOLUTE', '0')
+rabbitmq_config_file = '/etc/rabbitmq/rabbitmq.config'
+cookie_file = '/var/lib/rabbitmq/.erlang.cookie'
 
 
 def get_marathon_app(app_id):
@@ -72,7 +83,7 @@ def is_ip(ip):
     try:
         socket.inet_aton(ip)
         return True
-    except socket.eror:
+    except socket.error:
         return False
 
 
@@ -88,7 +99,7 @@ def configure_name_resolving(current_node_ip, other_node_ips=None):
     current_node_hostname = get_node_name(current_node_ip)
     with open('/etc/hosts', 'a') as f:
         LOGGER.info('Adding current node entries...')
-        host_name_entry = '127.0.0.1 %s' % HOST_NAME
+        host_name_entry = '127.0.0.1 %s' % CONTAINER_ID
         f.write(host_name_entry + '\n')
         LOGGER.info('+' + host_name_entry)
         current_host_entry = '127.0.0.1 %s' % current_node_hostname
@@ -115,8 +126,7 @@ def configure_name_resolving(current_node_ip, other_node_ips=None):
 
 
 def set_erlang_cookie():
-    cookie_file = '/var/lib/rabbitmq/.erlang.cookie'
-    rabbitmq_erlang_cookie = os.getenv('RABBITMQ_ERLANG_COOKIE', None)
+    rabbitmq_erlang_cookie = RABBITMQ_ERLANG_COOKIE
     existing_rabbitmq_erlang_cookie = None
     cookie_file_exists = os.path.isfile(cookie_file)
     if cookie_file_exists:
@@ -139,32 +149,26 @@ def set_erlang_cookie():
         with open(cookie_file, 'w') as f:
             f.write(rabbitmq_erlang_cookie)
         subprocess.call(['chown', 'rabbitmq', cookie_file])
+        #  The file must be only accessible to the owner.
         subprocess.call(['chmod', '600', cookie_file])
 
 
 def create_rabbitmq_config_file(node_ips=None):
-    rabbitmq_config_file = '/etc/rabbitmq/rabbitmq.config'
+    vm_mem_hw_absolute = VM_MEM_HIGH_WATERMARK_ABSOLUTE
     LOGGER.info('Creating %s', rabbitmq_config_file)
-    default_user = os.getenv('RABBITMQ_DEFAULT_USER', 'guest')
-    default_pass = os.getenv('RABBITMQ_DEFAULT_PASS', 'guest')
-    default_vhost = os.getenv('RABBITMQ_DEFAULT_VHOST', '/')
-    net_ticktime = os.getenv('RABBITMQ_NET_TICKTIME', '60')
-    cluster_partition_handling = os.getenv('RABBITMQ_CLUSTER_PARTITION_HANDLING', 'ignore')
-    rabbitmq_management_port = os.getenv('RABBITMQ_MANAGEMENT_PORT', '/')
-    vm_mem_hw_absolute = os.getenv('RABBITMQ_VM_MEM_HW_ABSOLUTE', '0')
     if vm_mem_hw_absolute == '0':
         vm_mem_hw_absolute = None
     with open(rabbitmq_config_file, 'w') as f:
         f.write('[\n')
-        f.write('  {kernel, [{net_ticktime,  %s}]},\n' % net_ticktime)
+        f.write('  {kernel, [{net_ticktime,  %s}]},\n' % NET_TICKTIME)
         f.write('  {rabbit,\n')
         f.write('    [\n')
         f.write('     {loopback_users, []},\n')
         f.write('     {heartbeat, 580},\n')
-        f.write('     {default_user, <<"%s">>},\n' % default_user)
-        f.write('     {default_pass, <<"%s">>},\n' % default_pass)
-        f.write('     {default_vhost, <<"%s">>},\n' % default_vhost)
-        f.write('     {cluster_partition_handling, %s},\n' % cluster_partition_handling)
+        f.write('     {default_user, <<"%s">>},\n' % DEFAULT_USER)
+        f.write('     {default_pass, <<"%s">>},\n' % DEFAULT_PASS)
+        f.write('     {default_vhost, <<"%s">>},\n' % DEFAULT_VHOST)
+        f.write('     {cluster_partition_handling, %s},\n' % CLUSTER_PARTITION_HANDLING)
         f.write('     {cluster_nodes, {[\n')
         if vm_mem_hw_absolute:
             f.write('     {vm_memory_high_watermark, {absolute, "%s"}}\n' % vm_mem_hw_absolute)
@@ -176,7 +180,7 @@ def create_rabbitmq_config_file(node_ips=None):
         f.write('    ]\n')
         f.write('  },\n')
         f.write('  {rabbitmq_management, [{listener, [{port, %s}]}]}\n'
-                % rabbitmq_management_port)
+                % MANAGEMENT_PORT)
         f.write('].\n')
 
 
