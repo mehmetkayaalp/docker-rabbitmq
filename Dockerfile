@@ -15,6 +15,10 @@ ENV RABBITMQ_ERLANG_COOKIE= \
 
 
 RUN apt-get update && apt-get install -y python python-pip openssl
+RUN pip install --upgrade pip
+
+COPY requirements.txt /requirements.txt
+RUN pip install -r /requirements.txt
 
 RUN chown -R rabbitmq:rabbitmq /var/lib/rabbitmq
 ADD ./rabbitmq-cluster.py /rabbitmq-cluster.py
